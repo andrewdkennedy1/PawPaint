@@ -1,20 +1,44 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 🐾 PawPaint
 
-# Run and deploy your AI Studio app
+*Digital art for our feline overlords*
 
-This contains everything you need to run your app locally.
+## What is PawPaint? 🎨
 
-View your app in AI Studio: https://ai.studio/apps/drive/1JPqQjZOhVg8oxOS6lDxoRBFbOQ9zhcNy
+PawPaint is the purr-fect painting app designed specifically for cats! Watch your kitty create abstract masterpieces with every paw tap, swipe, and curious nose boop on the screen.
 
-## Run Locally
+### ✨ Features
 
-**Prerequisites:**  Node.js
+🐱 **Paw-Optimized Interface** - Responds to gentle paw taps and swipes  
+🔒 **Human Controls** - Lock settings so cats can't accidentally break things  
+📱 **Touch Sensitive** - Detects even the softest toe bean touches  
+🌈 **Cat-Safe Colors** - Vibrant digital paints that won't make a mess  
+🖌️ **Variable Brush Sizes** - From delicate whisker touches to full paw prints  
+📱 **Tablet Ready** - Perfect for iPads placed on the floor  
+🗑️ **Easy Reset** - Humans can clear the canvas between art sessions  
 
+### 🚀 Quick Start
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+npm install
+npm run dev
+```
+
+Set your `GEMINI_API_KEY` in `.env.local`, place your device on a stable surface, and let your cat discover their inner artist!
+
+### 🐾 Perfect For
+
+- Cats who love batting at moving things on screens
+- Pet parents who want to entertain their indoor cats
+- Creating unique "paw-stract" art pieces
+- Keeping curious cats busy while you work
+
+### 🎯 Pro Tips
+
+- Place device flat on a low table or floor
+- Start with larger brush sizes for easier paw detection
+- Take screenshots of your cat's masterpieces!
+- Best enjoyed with treats nearby as motivation
+
+---
+
+*Made with ❤️ for our artistic feline friends*
