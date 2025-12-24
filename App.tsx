@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Trash2, Maximize, Minimize, Lock, Unlock, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share } from 'lucide-react';
+import { Trash2, Lock, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share } from 'lucide-react';
 import Canvas from './components/Canvas';
 import { COLORS, BRUSH_SIZES } from './constants';
 
@@ -11,7 +11,6 @@ const App: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showParentalGate, setShowParentalGate] = useState(false);
-  const [isUnlockDropdownOpen, setIsUnlockDropdownOpen] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
@@ -89,6 +88,19 @@ const App: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const handleUnlockCombo = (e: KeyboardEvent) => {
+      if (!isLocked) return;
+      const key = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && key === 'l') {
+        e.preventDefault();
+        handleUnlock();
+      }
+    };
+    window.addEventListener('keydown', handleUnlockCombo);
+    return () => window.removeEventListener('keydown', handleUnlockCombo);
+  }, [isLocked]);
+
   const handleDownload = () => {
     const canvas = document.querySelector('canvas');
     if (canvas) {
@@ -104,15 +116,13 @@ const App: React.FC = () => {
   const handleLock = () => {
     setIsLocked(true);
     setIsMenuOpen(false);
-    setIsUnlockDropdownOpen(false);
-    showToast("Safe Mode 🔒 (Adults: tap hidden top-right gear)");
+    showToast("Kid Lock 🔒 (Cmd/Ctrl+Shift+L to unlock)");
     if (!isFullscreen) toggleFullscreen().catch(() => {});
   };
 
   const handleUnlock = () => {
     setIsLocked(false);
-    setIsUnlockDropdownOpen(false);
-    showToast("Safe Mode Off 🔓");
+    showToast("Kid Lock Off 🔓");
   };
 
   const onPawClick = () => {
@@ -296,7 +306,7 @@ const App: React.FC = () => {
                   className="flex flex-col items-center gap-1 p-4 rounded-3xl bg-pink-600 text-white shadow-xl shadow-pink-200 hover:bg-pink-700 transition-colors"
                 >
                   <Lock size={24} />
-                  <span className="text-[10px] font-black uppercase tracking-wider">SAFE</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider">LOCK</span>
                 </button>
               </div>
             </div>
@@ -341,45 +351,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Secret Adult Unlock Mechanism - Invisible in top-right */}
-      <div className="absolute top-0 right-0 p-6 z-[60]">
-        <div className="relative">
-          <button
-            onClick={() => setIsUnlockDropdownOpen(!isUnlockDropdownOpen)}
-            className={`w-16 h-16 flex items-center justify-center rounded-full transition-all duration-500 ${
-              isLocked ? 'bg-transparent text-transparent hover:bg-black/5 hover:text-gray-300' : 'bg-transparent text-transparent'
-            }`}
-          >
-            <Settings size={32} />
-          </button>
-          
-          {isUnlockDropdownOpen && (
-            <div className="absolute right-0 mt-4 w-56 bg-white rounded-[2rem] shadow-2xl border border-pink-50 py-3 z-[70] overflow-hidden animate-bounce-in">
-              <div className="px-6 py-2 border-b border-gray-50 mb-1">
-                <span className="text-[10px] font-black text-gray-400 tracking-widest uppercase">Parental Controls</span>
-              </div>
-              <button
-                onClick={handleUnlock}
-                className="w-full px-6 py-5 text-left flex items-center gap-4 text-pink-600 font-black hover:bg-pink-50 transition-colors"
-              >
-                <Unlock size={24} />
-                Exit Safe Mode
-              </button>
-              <button
-                onClick={() => {
-                  clearCanvasRef.current?.();
-                  setIsUnlockDropdownOpen(false);
-                  showToast("Canvas cleared ✨");
-                }}
-                className="w-full px-6 py-5 text-left flex items-center gap-4 text-red-500 font-black hover:bg-red-50 transition-colors border-t border-gray-50"
-              >
-                <Trash2 size={24} />
-                Wipe Canvas
-              </button>
-            </div>
-          )}
+      {isLocked && (
+        <div className="absolute top-4 right-4 z-[60] rounded-full border border-white/70 bg-white/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500 backdrop-blur-sm">
+          Locked - Cmd/Ctrl+Shift+L
         </div>
-      </div>
+      )}
 
       <style>{`
         @keyframes bounce-in {
