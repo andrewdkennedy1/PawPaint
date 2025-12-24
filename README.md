@@ -2,6 +2,8 @@
 
 *Digital art for our feline overlords*
 
+![Cat painting](https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif)
+
 ## What is PawPaint? 🎨
 
 PawPaint is the purr-fect painting app designed specifically for cats! Watch your kitty create abstract masterpieces with every paw tap, swipe, and curious nose boop on the screen.
