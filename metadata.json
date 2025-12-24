@@ -1,0 +1,11 @@
+{
+  "name": "PawPaint",
+  "description": "A cute, minimalist finger painting app for kids and paws, featuring a secure safe-mode lock.",
+  "requestFramePermissions": [],
+  "short_name": "PawPaint",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fffcf2",
+  "theme_color": "#f472b6",
+  "orientation": "any"
+}
