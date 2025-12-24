@@ -1,17 +1,17 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Trash2, Lock, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share } from 'lucide-react';
+import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share } from 'lucide-react';
 import Canvas from './components/Canvas';
 import { COLORS, BRUSH_SIZES } from './constants';
 
 const App: React.FC = () => {
   const [color, setColor] = useState(COLORS[0]);
   const [brushSize, setBrushSize] = useState(BRUSH_SIZES[1]);
-  const [isLocked, setIsLocked] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showParentalGate, setShowParentalGate] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [showGuidedAccessGuide, setShowGuidedAccessGuide] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
   
@@ -88,19 +88,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    const handleUnlockCombo = (e: KeyboardEvent) => {
-      if (!isLocked) return;
-      const key = e.key.toLowerCase();
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && key === 'l') {
-        e.preventDefault();
-        handleUnlock();
-      }
-    };
-    window.addEventListener('keydown', handleUnlockCombo);
-    return () => window.removeEventListener('keydown', handleUnlockCombo);
-  }, [isLocked]);
-
   const handleDownload = () => {
     const canvas = document.querySelector('canvas');
     if (canvas) {
@@ -111,18 +98,6 @@ const App: React.FC = () => {
       link.click();
       showToast("Art saved to gallery! ✨", "success");
     }
-  };
-
-  const handleLock = () => {
-    setIsLocked(true);
-    setIsMenuOpen(false);
-    showToast("Kid Lock 🔒 (Cmd/Ctrl+Shift+L to unlock)");
-    if (!isFullscreen) toggleFullscreen().catch(() => {});
-  };
-
-  const handleUnlock = () => {
-    setIsLocked(false);
-    showToast("Kid Lock Off 🔓");
   };
 
   const onPawClick = () => {
@@ -179,17 +154,16 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Control: Hidden Discrete Paw Button */}
-      {!isLocked && (
-        <div className="absolute bottom-8 left-8 z-40">
-          <button
-            onClick={onPawClick}
-            className={`w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
-              isMenuOpen ? 'bg-pink-500 text-white rotate-90 scale-110' : 'bg-white/80 text-pink-400 hover:bg-white hover:scale-105'
-            }`}
-          >
-            {isMenuOpen ? <X size={32} /> : <PawPrint size={32} />}
-          </button>
+      {/* Main Control: Paw Button */}
+      <div className="absolute bottom-8 left-8 z-40">
+        <button
+          onClick={onPawClick}
+          className={`w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
+            isMenuOpen ? 'bg-pink-500 text-white rotate-90 scale-110' : 'bg-white/80 text-pink-400 hover:bg-white hover:scale-105'
+          }`}
+        >
+          {isMenuOpen ? <X size={32} /> : <PawPrint size={32} />}
+        </button>
 
           {/* Parental Gate Modal (Human Logic: Read and Match) */}
           {showParentalGate && (
@@ -279,7 +253,7 @@ const App: React.FC = () => {
               </div>
 
               {/* Utility Actions */}
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => { clearCanvasRef.current?.(); setIsMenuOpen(false); showToast("Squeaky clean! ✨"); }}
                   className="flex flex-col items-center gap-1 p-4 rounded-3xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
@@ -302,17 +276,26 @@ const App: React.FC = () => {
                   <span className="text-[10px] font-black uppercase tracking-wider">INSTALL</span>
                 </button>
                 <button
-                  onClick={handleLock}
-                  className="flex flex-col items-center gap-1 p-4 rounded-3xl bg-pink-600 text-white shadow-xl shadow-pink-200 hover:bg-pink-700 transition-colors"
+                  onClick={() => toggleFullscreen().catch(() => {})}
+                  className="flex flex-col items-center gap-1 p-4 rounded-3xl bg-pink-50 text-pink-600 hover:bg-pink-100 transition-colors"
                 >
-                  <Lock size={24} />
-                  <span className="text-[10px] font-black uppercase tracking-wider">LOCK</span>
+                  {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
+                  <span className="text-[10px] font-black uppercase tracking-wider">
+                    {isFullscreen ? 'EXIT FS' : 'FULLSCREEN'}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setShowGuidedAccessGuide(true)}
+                  className="flex flex-col items-center gap-1 p-4 rounded-3xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                >
+                  <ShieldCheck size={24} />
+                  <span className="text-[10px] font-black uppercase tracking-wider">GUIDED</span>
                 </button>
               </div>
             </div>
           )}
         </div>
-      )}
+      </div>
 
       {/* iPad / iOS Install Guide Modal */}
       {showInstallGuide && (
@@ -351,9 +334,52 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isLocked && (
-        <div className="absolute top-4 right-4 z-[60] rounded-full border border-white/70 bg-white/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500 backdrop-blur-sm">
-          Locked - Cmd/Ctrl+Shift+L
+      {/* Guided Access Modal */}
+      {showGuidedAccessGuide && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm p-6">
+          <div className="w-full max-w-sm bg-white rounded-[3rem] shadow-2xl p-8 animate-bounce-in text-center flex flex-col items-center gap-6">
+            <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
+              <ShieldCheck size={32} />
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-gray-800 mb-2">Guided Access</h3>
+              <p className="text-gray-500 text-sm leading-relaxed">
+                Use iPad Guided Access to stop app switching while PawPaint is open.
+              </p>
+            </div>
+            <div className="w-full space-y-4 text-left">
+              <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-2xl">
+                <div className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-emerald-600 font-black">
+                  1
+                </div>
+                <p className="text-sm font-bold text-gray-700">
+                  Enable Guided Access in Settings -> Accessibility.
+                </p>
+              </div>
+              <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-2xl">
+                <div className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-emerald-600 font-black">
+                  2
+                </div>
+                <p className="text-sm font-bold text-gray-700">
+                  Start it with triple-click on the side button.
+                </p>
+              </div>
+              <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-2xl">
+                <div className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-emerald-600 font-black">
+                  3
+                </div>
+                <p className="text-sm font-bold text-gray-700">
+                  End with another triple-click and your passcode.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowGuidedAccessGuide(false)}
+              className="w-full py-4 bg-emerald-500 text-white font-black rounded-2xl shadow-lg shadow-emerald-200 active:scale-95 transition-all"
+            >
+              Got it!
+            </button>
+          </div>
         </div>
       )}
 
