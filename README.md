@@ -25,7 +25,7 @@ npm install
 npm run dev
 ```
 
-Set your `GEMINI_API_KEY` in `.env.local`, place your device on a stable surface, and let your cat discover their inner artist!
+Place your device on a stable surface, and let your cat discover their inner artist!
 
 ### 🐾 Perfect For
 
@@ -44,3 +44,11 @@ Set your `GEMINI_API_KEY` in `.env.local`, place your device on a stable surface
 ---
 
 *Made with ❤️ for our artistic feline friends*
+
+---
+
+## Deploy to Cloudflare Pages (GitHub Integration)
+
+1. In Cloudflare Pages, create a new project from `https://github.com/andrewdkennedy1/PawPaint`.
+2. Set build command to `npm run build` and build output directory to `dist`.
+3. Add the custom domain `pawpaint.catcafe.space` in Pages, then follow the DNS instructions.
