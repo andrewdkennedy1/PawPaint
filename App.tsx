@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share, Shuffle, Timer, Sparkles } from 'lucide-react';
+import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share, Shuffle, Timer, Sparkles, Zap } from 'lucide-react';
 import Canvas from './components/Canvas';
 import { COLORS, COLOR_THEMES, BRUSH_SIZES } from './constants';
 
@@ -19,6 +19,7 @@ const App: React.FC = () => {
   const [themeId, setThemeId] = useState(COLOR_THEMES[0]?.id ?? 'default');
   const [customColors, setCustomColors] = useState<string[]>([]);
   const [isAttractMode, setIsAttractMode] = useState(false);
+  const [attractIntensity, setAttractIntensity] = useState<'low' | 'med' | 'high'>('med');
   
   // Parental Gate State
   const [gateCode, setGateCode] = useState<string>("");
@@ -102,18 +103,155 @@ const App: React.FC = () => {
     return Array.from(new Set([...themeColors, ...customColors]));
   }, [themeColors, customColors]);
 
-  const attractDots = useMemo(() => {
-    return Array.from({ length: 10 }, (_, i) => ({
-      id: `dot-${i}`,
-      size: 8 + Math.floor(Math.random() * 10),
-      x: Math.floor(Math.random() * 90),
-      y: Math.floor(Math.random() * 90),
-      dx: Math.floor(Math.random() * 60) - 30,
-      dy: Math.floor(Math.random() * 60) - 30,
-      duration: 6 + Math.random() * 8,
-      delay: Math.random() * 6,
+  const lureCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!isAttractMode) return undefined;
+    const canvas = lureCanvasRef.current;
+    if (!canvas) return undefined;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const level = attractIntensity;
+    const counts = { low: 12, med: 20, high: 32 };
+    const speed = { low: 0.6, med: 0.9, high: 1.2 };
+    const streakChance = { low: 0.02, med: 0.04, high: 0.07 };
+
+    const rand = (min: number, max: number) => min + Math.random() * (max - min);
+    const pickColor = () => palette[Math.floor(Math.random() * palette.length)] ?? '#f472b6';
+
+    const particles = Array.from({ length: counts[level] }, () => ({
+      x: rand(0, canvas.width),
+      y: rand(0, canvas.height),
+      vx: rand(-1, 1) * speed[level],
+      vy: rand(-1, 1) * speed[level],
+      size: rand(6, 12),
+      color: pickColor(),
     }));
-  }, []);
+
+    const laser = {
+      x: rand(0, canvas.width),
+      y: rand(0, canvas.height),
+      vx: rand(-2, 2) * 1.5,
+      vy: rand(-2, 2) * 1.5,
+      size: 10,
+      color: '#facc15',
+    };
+
+    const streaks: { x: number; y: number; vx: number; vy: number; life: number; color: string }[] = [];
+    let touchX: number | null = null;
+    let touchY: number | null = null;
+    let touchTime = 0;
+
+    const onTouch = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      touchX = t.clientX;
+      touchY = t.clientY;
+      touchTime = Date.now();
+    };
+    window.addEventListener('touchstart', onTouch, { passive: true });
+    window.addEventListener('touchmove', onTouch, { passive: true });
+
+    let raf = 0;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const now = Date.now();
+      const hasTouch = touchX !== null && touchY !== null && now - touchTime < 800;
+
+      if (Math.random() < streakChance[level]) {
+        streaks.push({
+          x: rand(0, canvas.width),
+          y: rand(0, canvas.height),
+          vx: rand(-3, 3) * (1 + speed[level]),
+          vy: rand(-3, 3) * (1 + speed[level]),
+          life: rand(20, 40),
+          color: pickColor(),
+        });
+      }
+
+      particles.forEach((p) => {
+        if (hasTouch && touchX !== null && touchY !== null) {
+          const dx = p.x - touchX;
+          const dy = p.y - touchY;
+          const dist = Math.max(40, Math.sqrt(dx * dx + dy * dy));
+          p.vx += (dx / dist) * 0.3;
+          p.vy += (dy / dist) * 0.3;
+        }
+
+        p.vx += rand(-0.05, 0.05);
+        p.vy += rand(-0.05, 0.05);
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+
+        ctx.beginPath();
+        ctx.fillStyle = p.color;
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = p.color;
+        ctx.globalAlpha = 0.85;
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      laser.vx += rand(-0.2, 0.2);
+      laser.vy += rand(-0.2, 0.2);
+      laser.x += laser.vx * 2;
+      laser.y += laser.vy * 2;
+      if (laser.x < 0 || laser.x > canvas.width) laser.vx *= -1;
+      if (laser.y < 0 || laser.y > canvas.height) laser.vy *= -1;
+      ctx.beginPath();
+      ctx.fillStyle = laser.color;
+      ctx.shadowBlur = 22;
+      ctx.shadowColor = laser.color;
+      ctx.globalAlpha = 0.95;
+      ctx.arc(laser.x, laser.y, laser.size, 0, Math.PI * 2);
+      ctx.fill();
+
+      for (let i = streaks.length - 1; i >= 0; i -= 1) {
+        const s = streaks[i];
+        const x2 = s.x + s.vx * 6;
+        const y2 = s.y + s.vy * 6;
+        ctx.beginPath();
+        ctx.strokeStyle = s.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = s.color;
+        ctx.globalAlpha = 0.7;
+        ctx.lineWidth = 4;
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        s.x = x2;
+        s.y = y2;
+        s.life -= 1;
+        if (s.life <= 0) streaks.splice(i, 1);
+      }
+
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      raf = window.requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('touchstart', onTouch);
+      window.removeEventListener('touchmove', onTouch);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }, [isAttractMode, attractIntensity, palette]);
 
   useEffect(() => {
     if (!autoRandomize) return undefined;
@@ -222,27 +360,10 @@ const App: React.FC = () => {
 
       {/* Attract Mode Layer */}
       {isAttractMode && (
-        <div className="absolute inset-0 z-20 pointer-events-none">
-          {attractDots.map((dot, idx) => (
-            <div
-              key={dot.id}
-              className="absolute rounded-full animate-attract"
-              style={{
-                width: dot.size,
-                height: dot.size,
-                backgroundColor: palette[idx % palette.length] ?? '#f472b6',
-                opacity: 0.8,
-                boxShadow: `0 0 ${Math.max(6, dot.size)}px rgba(255,255,255,0.35)`,
-                ['--x' as any]: `${dot.x}vw`,
-                ['--y' as any]: `${dot.y}vh`,
-                ['--dx' as any]: `${dot.dx}vw`,
-                ['--dy' as any]: `${dot.dy}vh`,
-                animationDuration: `${dot.duration}s`,
-                animationDelay: `${dot.delay}s`,
-              }}
-            />
-          ))}
-        </div>
+        <canvas
+          ref={lureCanvasRef}
+          className="absolute inset-0 z-20 pointer-events-none"
+        />
       )}
 
       {/* Discrete Toast Notification */}
@@ -400,6 +521,21 @@ const App: React.FC = () => {
                   <Sparkles size={24} />
                   <span className="text-[10px] font-black uppercase tracking-wider">
                     {isAttractMode ? 'LURE ON' : 'LURE OFF'}
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    const levels: Array<'low' | 'med' | 'high'> = ['low', 'med', 'high'];
+                    const idx = levels.indexOf(attractIntensity);
+                    const next = levels[(idx + 1) % levels.length];
+                    setAttractIntensity(next);
+                    showToast(`Lure intensity: ${next}`, 'info');
+                  }}
+                  className="flex flex-col items-center gap-1 p-4 rounded-3xl bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors"
+                >
+                  <Zap size={24} />
+                  <span className="text-[10px] font-black uppercase tracking-wider">
+                    INTENSITY {attractIntensity.toUpperCase()}
                   </span>
                 </button>
                 <button
@@ -568,21 +704,11 @@ const App: React.FC = () => {
           0% { transform: translateY(30px) scale(0.9); opacity: 0; }
           100% { transform: translateY(0) scale(1); opacity: 1; }
         }
-        @keyframes attract-drift {
-          0% { transform: translate(var(--x), var(--y)) scale(0.7); opacity: 0.2; }
-          50% { opacity: 0.9; }
-          100% { transform: translate(calc(var(--x) + var(--dx)), calc(var(--y) + var(--dy))) scale(1.2); opacity: 0.1; }
-        }
         .animate-bounce-in {
           animation: bounce-in 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
         .animate-slide-up {
           animation: slide-up 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
-        }
-        .animate-attract {
-          animation-name: attract-drift;
-          animation-timing-function: linear;
-          animation-iteration-count: infinite;
         }
         canvas {
           cursor: crosshair;
