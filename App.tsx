@@ -1,8 +1,9 @@
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share, Shuffle, Timer, Sparkles, Zap } from 'lucide-react';
 import Canvas from './components/Canvas';
 import { COLORS, COLOR_THEMES, BRUSH_SIZES } from './constants';
+import Viewer from './components/Viewer';
 
 const App: React.FC = () => {
   const [color, setColor] = useState(COLORS[0]);
@@ -24,6 +25,10 @@ const App: React.FC = () => {
   // Parental Gate State
   const [gateCode, setGateCode] = useState<string>("");
   const [userAttempt, setUserAttempt] = useState<string>("");
+  const [roomCode, setRoomCode] = useState<string>("");
+  const [snapshotDirty, setSnapshotDirty] = useState(false);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const clearCanvasRef = useRef<(() => void) | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,6 +49,54 @@ const App: React.FC = () => {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('pawpaint-room-code');
+    const code = (stored || Math.random().toString(36).slice(2, 8)).toUpperCase();
+    setRoomCode(code);
+    localStorage.setItem('pawpaint-room-code', code);
+  }, []);
+
+  const markActivity = useCallback(() => setSnapshotDirty(true), []);
+
+  const pushSnapshot = useCallback(async () => {
+    if (!roomCode) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    try {
+      const dataUrl = canvas.toDataURL('image/webp', 0.7);
+      await fetch(`/api/view/${roomCode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+    } catch (err) {
+      console.error('Snapshot sync failed', err);
+    }
+  }, [roomCode]);
+
+  useEffect(() => {
+    if (!snapshotDirty) return undefined;
+    const id = setTimeout(() => {
+      pushSnapshot();
+      setSnapshotDirty(false);
+    }, 800);
+    return () => clearTimeout(id);
+  }, [snapshotDirty, pushSnapshot]);
+
+  useEffect(() => {
+    if (!roomCode) return undefined;
+    const id = setInterval(() => {
+      pushSnapshot();
+    }, 15000);
+    return () => clearInterval(id);
+  }, [roomCode, pushSnapshot]);
+
+  useEffect(() => {
+    if (roomCode) {
+      setSnapshotDirty(true);
+    }
+  }, [roomCode]);
 
   const generateGateCode = () => {
     const code = Array.from({ length: 3 }, () => Math.floor(Math.random() * 9) + 1).join("");
@@ -351,11 +404,13 @@ const App: React.FC = () => {
       </div>
 
       {/* Canvas Layer */}
-      <Canvas 
-        color={color} 
-        brushSize={brushSize} 
+      <Canvas
+        color={color}
+        brushSize={brushSize}
         onClearRef={clearCanvasRef}
         isFullscreen={isFullscreen}
+        canvasRef={canvasRef}
+        onActivity={markActivity}
       />
 
       {/* Attract Mode Layer */}
@@ -407,6 +462,12 @@ const App: React.FC = () => {
                     <p className="text-pink-600 text-3xl font-black tracking-[0.3em]">
                       {gateCode.split('').join(' ')}
                     </p>
+                  </div>
+
+                  <div className="bg-indigo-50/60 px-6 py-3 rounded-2xl mb-2 border border-indigo-100">
+                    <p className="text-indigo-400 text-[10px] font-bold uppercase mb-1">Viewer room</p>
+                    <p className="text-indigo-600 text-2xl font-black tracking-[0.25em]">{roomCode || '...'}</p>
+                    <p className="text-indigo-300 text-[10px] font-bold uppercase mt-1">Open pawpaint.catcafe.space/view</p>
                   </div>
                   
                   {/* Visual feedback of entry */}
