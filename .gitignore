@@ -9,6 +9,8 @@ lerna-debug.log*
 
 node_modules
 dist
+.wrangler_build
+.wrangler_home
 dist-ssr
 *.local
 .env
