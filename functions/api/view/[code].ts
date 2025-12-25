@@ -5,7 +5,30 @@ export const onRequest = async (context: any) => {
   }
 
   const cacheKey = new Request(`https://pawpaint/view/${code}`);
+  const roomsKey = new Request('https://pawpaint/view/_rooms');
   const cache = caches.default;
+
+  const loadRooms = async () => {
+    const cachedRooms = await cache.match(roomsKey);
+    if (!cachedRooms) return [] as any[];
+    try {
+      return (await cachedRooms.json()) as any[];
+    } catch {
+      return [] as any[];
+    }
+  };
+
+  const saveRooms = async (rooms: any[]) => {
+    await cache.put(
+      roomsKey,
+      new Response(JSON.stringify(rooms), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store',
+        },
+      }),
+    );
+  };
 
   if (context.request.method === 'POST') {
     try {
@@ -24,6 +47,16 @@ export const onRequest = async (context: any) => {
           },
         }),
       );
+
+      const existingRooms = await loadRooms();
+      const now = Date.now();
+      const filteredRooms = existingRooms.filter((room) => now - (room.updatedAt ?? 0) < 1000 * 60 * 60 * 12);
+      const nextRooms = [
+        { code, updatedAt: now, image: body.image },
+        ...filteredRooms.filter((room) => room.code !== code),
+      ].slice(0, 100);
+      await saveRooms(nextRooms);
+
       return new Response(null, { status: 204 });
     } catch (err) {
       console.error('Failed to store snapshot', err);
