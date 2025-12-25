@@ -1,8 +1,8 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share, Shuffle, Timer } from 'lucide-react';
 import Canvas from './components/Canvas';
-import { COLORS, BRUSH_SIZES } from './constants';
+import { COLORS, COLOR_THEMES, BRUSH_SIZES } from './constants';
 
 const App: React.FC = () => {
   const [color, setColor] = useState(COLORS[0]);
@@ -16,6 +16,8 @@ const App: React.FC = () => {
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
   const [autoRandomize, setAutoRandomize] = useState(true);
   const [autoIntervalMs, setAutoIntervalMs] = useState(8000);
+  const [themeId, setThemeId] = useState(COLOR_THEMES[0]?.id ?? 'default');
+  const [customColors, setCustomColors] = useState<string[]>([]);
   
   // Parental Gate State
   const [gateCode, setGateCode] = useState<string>("");
@@ -90,14 +92,23 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const themeColors = useMemo(() => {
+    const theme = COLOR_THEMES.find((t) => t.id === themeId) ?? COLOR_THEMES[0];
+    return theme?.colors ?? COLORS;
+  }, [themeId]);
+
+  const palette = useMemo(() => {
+    return Array.from(new Set([...themeColors, ...customColors]));
+  }, [themeColors, customColors]);
+
   useEffect(() => {
     if (!autoRandomize) return undefined;
     const intervalId = setInterval(() => {
       setColor((prev) => {
-        if (COLORS.length <= 1) return prev;
+        if (palette.length <= 1) return prev;
         let next = prev;
         while (next === prev) {
-          next = COLORS[Math.floor(Math.random() * COLORS.length)];
+          next = palette[Math.floor(Math.random() * palette.length)];
         }
         return next;
       });
@@ -112,7 +123,7 @@ const App: React.FC = () => {
     }, autoIntervalMs);
 
     return () => clearInterval(intervalId);
-  }, [autoRandomize, autoIntervalMs]);
+  }, [autoRandomize, autoIntervalMs, palette]);
 
   const handleDownload = () => {
     const canvas = document.querySelector('canvas');
@@ -273,16 +284,47 @@ const App: React.FC = () => {
                 <Palette size={24} /> PawPaint Controls
               </h2>
 
+              {/* Theme Controls */}
+              <div className="flex items-center justify-between bg-pink-50 rounded-3xl px-4 py-3 gap-3">
+                <div className="text-[10px] font-black uppercase tracking-wider text-pink-500">
+                  Theme
+                </div>
+                <select
+                  value={themeId}
+                  onChange={(e) => setThemeId(e.target.value)}
+                  className="bg-white/90 text-pink-600 font-black text-xs rounded-2xl px-4 py-2 shadow-sm border border-pink-100"
+                >
+                  {COLOR_THEMES.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-2 bg-white/90 text-pink-600 font-black text-xs rounded-2xl px-4 py-2 shadow-sm border border-pink-100 cursor-pointer">
+                  <span>Custom</span>
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setColor(next);
+                      setCustomColors((prev) => (prev.includes(next) ? prev : [...prev, next]));
+                    }}
+                    className="h-6 w-6 rounded-full border-0 p-0 bg-transparent"
+                  />
+                </label>
+              </div>
+
               {/* Color Palette */}
-              <div className="grid grid-cols-6 gap-3">
-                {COLORS.map((c) => (
+              <div className="grid grid-cols-4 gap-4 place-items-center">
+                {palette.map((c) => (
                   <button
                     key={c}
                     onClick={() => {
                       setColor(c);
                       showToast(`Switched to ${c}`, 'info');
                     }}
-                    className={`w-full aspect-square rounded-2xl border-4 transition-all active:scale-90 ${color === c ? 'border-pink-500 scale-110' : 'border-transparent shadow-sm'}`}
+                    className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl border-4 transition-all active:scale-90 ${color === c ? 'border-pink-500 scale-110' : 'border-transparent shadow-sm'}`}
                     style={{ backgroundColor: c }}
                   />
                 ))}
