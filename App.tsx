@@ -88,6 +88,29 @@ const App: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setColor((prev) => {
+        if (COLORS.length <= 1) return prev;
+        let next = prev;
+        while (next === prev) {
+          next = COLORS[Math.floor(Math.random() * COLORS.length)];
+        }
+        return next;
+      });
+      setBrushSize((prev) => {
+        if (BRUSH_SIZES.length <= 1) return prev;
+        let next = prev;
+        while (next === prev) {
+          next = BRUSH_SIZES[Math.floor(Math.random() * BRUSH_SIZES.length)];
+        }
+        return next;
+      });
+    }, 8000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
   const handleDownload = () => {
     const canvas = document.querySelector('canvas');
     if (canvas) {
