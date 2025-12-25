@@ -295,7 +295,6 @@ const App: React.FC = () => {
             </div>
           )}
         </div>
-      </div>
 
       {/* iPad / iOS Install Guide Modal */}
       {showInstallGuide && (
@@ -353,7 +352,7 @@ const App: React.FC = () => {
                   1
                 </div>
                 <p className="text-sm font-bold text-gray-700">
-                  Enable Guided Access in Settings -> Accessibility.
+                  Enable Guided Access in Settings / Accessibility.
                 </p>
               </div>
               <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-2xl">
