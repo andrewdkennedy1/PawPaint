@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import Viewer from './components/Viewer';
 import './index.css';
 
 // Register Service Worker for offline support
@@ -18,9 +19,11 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
+const isViewerRoute = window.location.pathname.startsWith('/view');
+
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    {isViewerRoute ? <Viewer /> : <App />}
   </React.StrictMode>
 );

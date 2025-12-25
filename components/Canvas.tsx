@@ -7,6 +7,8 @@ interface CanvasProps {
   brushSize: number;
   onClearRef: React.MutableRefObject<(() => void) | null>;
   isFullscreen: boolean;
+  canvasRef?: React.RefObject<HTMLCanvasElement>;
+  onActivity?: () => void;
 }
 
 interface PointerState {
@@ -16,8 +18,9 @@ interface PointerState {
   time: number;
 }
 
-const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscreen }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscreen, canvasRef: externalCanvasRef, onActivity }) => {
+  const internalCanvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = externalCanvasRef ?? internalCanvasRef;
   const [isDrawing, setIsDrawing] = useState(false);
   const drawingRef = useRef(false);
 
@@ -65,6 +68,7 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
       if (ctx && canvas) {
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        onActivity?.();
       }
     };
 
@@ -100,6 +104,8 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
       lastVelocity: 0,
       lastWidth: brushSize,
     });
+
+    onActivity?.();
     
     // Set up canvas properties for "Wet Paint" texture
     const ctx = canvasRef.current?.getContext('2d');
@@ -140,6 +146,7 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     currentPoint.width = newWidth;
 
     stroke.points.push(currentPoint);
+    onActivity?.();
 
     if (stroke.points.length > 3) {
       const p0 = stroke.points[stroke.points.length - 3];
