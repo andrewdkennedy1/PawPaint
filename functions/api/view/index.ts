@@ -1,27 +1,16 @@
-const roomsKey = new Request('https://pawpaint/view/_rooms');
+import { listActiveRooms } from './storage';
 
-export const onRequest = async () => {
-  const cache = caches.default;
+const jsonHeaders = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-cache, no-store',
+};
 
-  const cached = await cache.match(roomsKey);
-  if (!cached) {
-    return new Response(JSON.stringify({ rooms: [] }), {
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store' },
-    });
-  }
-
+export const onRequest = async (context: any) => {
   try {
-    const rooms = await cached.json();
-    const now = Date.now();
-    const activeRooms = (rooms || []).filter((room: any) => now - (room.updatedAt ?? 0) < 1000 * 60 * 60 * 3);
-
-    return new Response(JSON.stringify({ rooms: activeRooms }), {
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store' },
-    });
+    const rooms = await listActiveRooms(context);
+    return new Response(JSON.stringify({ rooms }), { headers: jsonHeaders });
   } catch (err) {
     console.error('Failed to load rooms', err);
-    return new Response(JSON.stringify({ rooms: [] }), {
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store' },
-    });
+    return new Response(JSON.stringify({ rooms: [] }), { headers: jsonHeaders });
   }
 };

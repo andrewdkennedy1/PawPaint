@@ -56,36 +56,87 @@ const Viewer: React.FC = () => {
     if (!activeRoom) return undefined;
 
     setStatus('Connecting to room...');
+    setSnapshot({ image: null, updatedAt: null });
 
     let cancelled = false;
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/view/${activeRoom}`);
-        if (!res.ok) throw new Error('Failed to load snapshot');
-        const json = (await res.json()) as SnapshotResponse;
-        if (!cancelled) {
-          setSnapshot(json);
-          if (json.image) {
-            setStatus('Live view');
-          } else if (json.updatedAt) {
-            setStatus('Room active. Waiting for the first brush stroke...');
-          } else {
-            setStatus('Waiting for the artist to start...');
-          }
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error(err);
-          setStatus('Connection lost. Retrying...');
-        }
+    let pollId: number | null = null;
+    let eventSource: EventSource | null = null;
+    let fallbackTimer: number | null = null;
+    let receivedFirstEvent = false;
+
+    const applySnapshot = (json: SnapshotResponse) => {
+      setSnapshot(json);
+      if (json.image) {
+        setStatus('Live view');
+      } else if (json.updatedAt) {
+        setStatus('Room active. Waiting for the first brush stroke...');
+      } else {
+        setStatus('Waiting for the artist to start...');
       }
     };
 
-    poll();
-    const id = setInterval(poll, 2000);
+    const startPolling = () => {
+      if (pollId) return;
+      const poll = async () => {
+        try {
+          const res = await fetch(`/api/view/${activeRoom}`);
+          if (!res.ok) throw new Error('Failed to load snapshot');
+          const json = (await res.json()) as SnapshotResponse;
+          if (!cancelled) applySnapshot(json);
+        } catch (err) {
+          if (!cancelled) {
+            console.error(err);
+            setStatus('Connection lost. Retrying...');
+          }
+        }
+      };
+
+      poll();
+      pollId = window.setInterval(poll, 2000);
+    };
+
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      eventSource = new EventSource(`/api/view/${activeRoom}/stream`);
+      eventSource.addEventListener('snapshot', (event) => {
+        if (cancelled) return;
+        try {
+          receivedFirstEvent = true;
+          if (fallbackTimer) {
+            window.clearTimeout(fallbackTimer);
+            fallbackTimer = null;
+          }
+          const json = JSON.parse((event as MessageEvent).data) as SnapshotResponse;
+          applySnapshot(json);
+        } catch (err) {
+          console.error('Failed to parse stream event', err);
+        }
+      });
+      eventSource.onerror = () => {
+        if (cancelled) return;
+        setStatus('Connection lost. Retrying...');
+        if (!receivedFirstEvent) {
+          eventSource?.close();
+          eventSource = null;
+          startPolling();
+        }
+      };
+
+      fallbackTimer = window.setTimeout(() => {
+        if (cancelled) return;
+        if (receivedFirstEvent) return;
+        eventSource?.close();
+        eventSource = null;
+        startPolling();
+      }, 5000);
+    } else {
+      startPolling();
+    }
+
     return () => {
       cancelled = true;
-      clearInterval(id);
+      if (pollId) window.clearInterval(pollId);
+      if (fallbackTimer) window.clearTimeout(fallbackTimer);
+      eventSource?.close();
     };
   }, [activeRoom]);
 
