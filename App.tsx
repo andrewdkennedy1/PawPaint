@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share, Shuffle, Timer } from 'lucide-react';
+import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share, Shuffle, Timer, Sparkles } from 'lucide-react';
 import Canvas from './components/Canvas';
 import { COLORS, COLOR_THEMES, BRUSH_SIZES } from './constants';
 
@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [autoIntervalMs, setAutoIntervalMs] = useState(8000);
   const [themeId, setThemeId] = useState(COLOR_THEMES[0]?.id ?? 'default');
   const [customColors, setCustomColors] = useState<string[]>([]);
+  const [isAttractMode, setIsAttractMode] = useState(false);
   
   // Parental Gate State
   const [gateCode, setGateCode] = useState<string>("");
@@ -100,6 +101,19 @@ const App: React.FC = () => {
   const palette = useMemo(() => {
     return Array.from(new Set([...themeColors, ...customColors]));
   }, [themeColors, customColors]);
+
+  const attractDots = useMemo(() => {
+    return Array.from({ length: 10 }, (_, i) => ({
+      id: `dot-${i}`,
+      size: 8 + Math.floor(Math.random() * 10),
+      x: Math.floor(Math.random() * 90),
+      y: Math.floor(Math.random() * 90),
+      dx: Math.floor(Math.random() * 60) - 30,
+      dy: Math.floor(Math.random() * 60) - 30,
+      duration: 6 + Math.random() * 8,
+      delay: Math.random() * 6,
+    }));
+  }, []);
 
   useEffect(() => {
     if (!autoRandomize) return undefined;
@@ -205,6 +219,31 @@ const App: React.FC = () => {
         onClearRef={clearCanvasRef}
         isFullscreen={isFullscreen}
       />
+
+      {/* Attract Mode Layer */}
+      {isAttractMode && (
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          {attractDots.map((dot, idx) => (
+            <div
+              key={dot.id}
+              className="absolute rounded-full animate-attract"
+              style={{
+                width: dot.size,
+                height: dot.size,
+                backgroundColor: palette[idx % palette.length] ?? '#f472b6',
+                opacity: 0.8,
+                boxShadow: `0 0 ${Math.max(6, dot.size)}px rgba(255,255,255,0.35)`,
+                ['--x' as any]: `${dot.x}vw`,
+                ['--y' as any]: `${dot.y}vh`,
+                ['--dx' as any]: `${dot.dx}vw`,
+                ['--dy' as any]: `${dot.dy}vh`,
+                animationDuration: `${dot.duration}s`,
+                animationDelay: `${dot.delay}s`,
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Discrete Toast Notification */}
       {toast && (
@@ -350,6 +389,19 @@ const App: React.FC = () => {
 
               {/* Utility Actions */}
               <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setIsAttractMode((prev) => !prev)}
+                  className={`flex flex-col items-center gap-1 p-4 rounded-3xl transition-colors ${
+                    isAttractMode
+                      ? 'bg-orange-600 text-white shadow-xl shadow-orange-200 hover:bg-orange-700'
+                      : 'bg-orange-50 text-orange-600 hover:bg-orange-100'
+                  }`}
+                >
+                  <Sparkles size={24} />
+                  <span className="text-[10px] font-black uppercase tracking-wider">
+                    {isAttractMode ? 'LURE ON' : 'LURE OFF'}
+                  </span>
+                </button>
                 <button
                   onClick={() => setAutoRandomize((prev) => !prev)}
                   className={`flex flex-col items-center gap-1 p-4 rounded-3xl transition-colors ${
@@ -516,11 +568,21 @@ const App: React.FC = () => {
           0% { transform: translateY(30px) scale(0.9); opacity: 0; }
           100% { transform: translateY(0) scale(1); opacity: 1; }
         }
+        @keyframes attract-drift {
+          0% { transform: translate(var(--x), var(--y)) scale(0.7); opacity: 0.2; }
+          50% { opacity: 0.9; }
+          100% { transform: translate(calc(var(--x) + var(--dx)), calc(var(--y) + var(--dy))) scale(1.2); opacity: 0.1; }
+        }
         .animate-bounce-in {
           animation: bounce-in 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
         .animate-slide-up {
           animation: slide-up 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+        .animate-attract {
+          animation-name: attract-drift;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
         }
         canvas {
           cursor: crosshair;
