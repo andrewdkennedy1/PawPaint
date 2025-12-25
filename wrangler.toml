@@ -1,2 +1,4 @@
+# Cloudflare Pages project configuration (ensures Functions run instead of a standalone Worker)
 name = "pawpaint"
 pages_build_output_dir = "dist"
+compatibility_date = "2025-02-14"

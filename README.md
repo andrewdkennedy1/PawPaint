@@ -49,6 +49,16 @@ Place your device on a stable surface, and let your cat discover their inner art
 
 ## Deploy to Cloudflare Pages (GitHub Integration)
 
+> **Important:** PawPaint relies on Cloudflare **Pages Functions** (`functions/` directory). Deploying it as a standalone Worker will skip these endpoints and break room sharing. Always deploy as a **Pages** project.
+
 1. In Cloudflare Pages, create a new project from `https://github.com/andrewdkennedy1/PawPaint`.
 2. Set build command to `npm run build` and build output directory to `dist`.
-3. Add the custom domain `pawpaint.catcafe.space` in Pages, then follow the DNS instructions.
+3. Confirm the project type is **Pages** (not Workers) so the Functions are uploaded.
+4. Add the custom domain `pawpaint.catcafe.space` in Pages, then follow the DNS instructions.
+
+For manual deployments, build locally then run:
+
+```bash
+npm run build
+npx wrangler pages deploy dist --project-name pawpaint
+```
