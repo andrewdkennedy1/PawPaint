@@ -33,6 +33,23 @@ const App: React.FC = () => {
   const clearCanvasRef = useRef<(() => void) | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const id = setTimeout(async () => {
+      try {
+        const el = containerRef.current as any;
+        if (!el) return;
+        const isAlreadyFullscreen = !!document.fullscreenElement || !!(document as any).webkitFullscreenElement;
+        if (!isAlreadyFullscreen) {
+          if (el.requestFullscreen) await el.requestFullscreen();
+          else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+        }
+      } catch (err) {
+        console.warn('Auto fullscreen failed', err);
+      }
+    }, 600);
+    return () => clearTimeout(id);
+  }, []);
+
   const showToast = (message: string, type: 'info' | 'success' = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
@@ -371,12 +388,18 @@ const App: React.FC = () => {
   };
 
   const onPawClick = () => {
+    if (showParentalGate) {
+      setShowParentalGate(false);
+      return;
+    }
+
     if (isMenuOpen) {
       setIsMenuOpen(false);
-    } else {
-      generateGateCode();
-      setShowParentalGate(true);
+      return;
     }
+
+    generateGateCode();
+    setShowParentalGate(true);
   };
 
   const handleDigitPress = (digit: number) => {
@@ -493,12 +516,6 @@ const App: React.FC = () => {
                   ))}
                 </div>
 
-                <button 
-                  onClick={() => setShowParentalGate(false)}
-                  className="text-gray-400 text-[10px] font-bold uppercase tracking-widest hover:text-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
               </div>
             </div>
           )}
