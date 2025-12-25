@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share } from 'lucide-react';
+import { Trash2, Maximize, Minimize, Download, PawPrint, Palette, X, ShieldCheck, PlusSquare, Share, Shuffle, Timer } from 'lucide-react';
 import Canvas from './components/Canvas';
 import { COLORS, BRUSH_SIZES } from './constants';
 
@@ -14,6 +14,8 @@ const App: React.FC = () => {
   const [showGuidedAccessGuide, setShowGuidedAccessGuide] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
+  const [autoRandomize, setAutoRandomize] = useState(true);
+  const [autoIntervalMs, setAutoIntervalMs] = useState(8000);
   
   // Parental Gate State
   const [gateCode, setGateCode] = useState<string>("");
@@ -89,6 +91,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!autoRandomize) return undefined;
     const intervalId = setInterval(() => {
       setColor((prev) => {
         if (COLORS.length <= 1) return prev;
@@ -106,20 +109,43 @@ const App: React.FC = () => {
         }
         return next;
       });
-    }, 8000);
+    }, autoIntervalMs);
 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [autoRandomize, autoIntervalMs]);
 
   const handleDownload = () => {
     const canvas = document.querySelector('canvas');
     if (canvas) {
-      const url = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = `pawprint-${Date.now()}.png`;
-      link.href = url;
-      link.click();
-      showToast("Art saved to gallery! ✨", "success");
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const filename = `pawprint-${Date.now()}.png`;
+
+        if (navigator.share && (navigator as any).canShare && (navigator as any).canShare({ files: [new File([blob], filename, { type: blob.type })] })) {
+          const file = new File([blob], filename, { type: blob.type });
+          try {
+            await navigator.share({ files: [file], title: 'PawPaint', text: 'My PawPaint masterpiece' });
+            showToast("Share to Photos to save ✨", "success");
+            return;
+          } catch {
+            // Fall through to other options.
+          }
+        }
+
+        const url = URL.createObjectURL(blob);
+        if (isIOS) {
+          window.open(url, '_blank');
+          showToast("Press & hold the image to Save ✨", "info");
+        } else {
+          const link = document.createElement('a');
+          link.download = filename;
+          link.href = url;
+          link.click();
+          showToast("Art saved to downloads! ✨", "success");
+        }
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }, 'image/png');
     }
   };
 
@@ -277,6 +303,34 @@ const App: React.FC = () => {
 
               {/* Utility Actions */}
               <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setAutoRandomize((prev) => !prev)}
+                  className={`flex flex-col items-center gap-1 p-4 rounded-3xl transition-colors ${
+                    autoRandomize
+                      ? 'bg-emerald-600 text-white shadow-xl shadow-emerald-200 hover:bg-emerald-700'
+                      : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                  }`}
+                >
+                  <Shuffle size={24} />
+                  <span className="text-[10px] font-black uppercase tracking-wider">
+                    {autoRandomize ? 'AUTO ON' : 'AUTO OFF'}
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    const speeds = [4000, 8000, 12000];
+                    const idx = speeds.indexOf(autoIntervalMs);
+                    const next = speeds[(idx + 1) % speeds.length];
+                    setAutoIntervalMs(next);
+                    showToast(`Auto speed: ${Math.round(next / 1000)}s`, 'info');
+                  }}
+                  className="flex flex-col items-center gap-1 p-4 rounded-3xl bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors"
+                >
+                  <Timer size={24} />
+                  <span className="text-[10px] font-black uppercase tracking-wider">
+                    SPEED {Math.round(autoIntervalMs / 1000)}s
+                  </span>
+                </button>
                 <button
                   onClick={() => { clearCanvasRef.current?.(); setIsMenuOpen(false); showToast("Squeaky clean! ✨"); }}
                   className="flex flex-col items-center gap-1 p-4 rounded-3xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
