@@ -19,6 +19,7 @@ interface PointerState {
 const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscreen }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const drawingRef = useRef(false);
   
   // History for smoothing and dynamics
   const points = useRef<PointerState[]>([]);
@@ -76,23 +77,22 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     return () => clearTimeout(timer);
   }, [isFullscreen, resizeCanvas]);
 
-  const getPointerState = (e: React.PointerEvent): PointerState => {
+  const getPointFromClient = (clientX: number, clientY: number): PointerState => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0, width: brushSize, time: Date.now() };
     const rect = canvas.getBoundingClientRect();
     return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: clientX - rect.left,
+      y: clientY - rect.top,
       width: brushSize,
       time: Date.now()
     };
   };
 
-  const startDrawing = (e: React.PointerEvent) => {
-    if (e.button !== 0 && e.pointerType === 'mouse') return;
-    
+  const startStroke = (clientX: number, clientY: number) => {
     setIsDrawing(true);
-    const state = getPointerState(e);
+    drawingRef.current = true;
+    const state = getPointFromClient(clientX, clientY);
     points.current = [state, state];
     lastWidth.current = brushSize;
     lastVelocity.current = 0;
@@ -105,13 +105,13 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     }
   };
 
-  const draw = (e: React.PointerEvent) => {
-    if (!isDrawing) return;
+  const drawStroke = (clientX: number, clientY: number) => {
+    if (!drawingRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!ctx) return;
 
-    const currentPoint = getPointerState(e);
+    const currentPoint = getPointFromClient(clientX, clientY);
     const prevPoint = points.current[points.current.length - 1];
     
     // Calculate Speed Dynamics
@@ -170,19 +170,76 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     }
   };
 
-  const stopDrawing = () => {
+  const stopStroke = () => {
     setIsDrawing(false);
+    drawingRef.current = false;
     points.current = [];
   };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    startStroke(e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    drawStroke(e.clientX, e.clientY);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    startStroke(e.clientX, e.clientY);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    drawStroke(e.clientX, e.clientY);
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      startStroke(touch.clientX, touch.clientY);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      drawStroke(touch.clientX, touch.clientY);
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      stopStroke();
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [brushSize, color]);
 
   return (
     <canvas
       ref={canvasRef}
-      onPointerDown={startDrawing}
-      onPointerMove={draw}
-      onPointerUp={stopDrawing}
-      onPointerCancel={stopDrawing}
-      onPointerLeave={stopDrawing}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={stopStroke}
+      onPointerCancel={stopStroke}
+      onPointerLeave={stopStroke}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={stopStroke}
+      onMouseLeave={stopStroke}
       className="fixed inset-0 w-full h-full cursor-crosshair bg-white touch-none"
       style={{ touchAction: 'none' }}
     />
