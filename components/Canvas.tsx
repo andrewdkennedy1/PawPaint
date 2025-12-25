@@ -20,11 +20,13 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const drawingRef = useRef(false);
-  
-  // History for smoothing and dynamics
-  const points = useRef<PointerState[]>([]);
-  const lastVelocity = useRef<number>(0);
-  const lastWidth = useRef<number>(brushSize);
+
+  // History for smoothing and dynamics (per touch/pointer)
+  const strokes = useRef(new Map<number, {
+    points: PointerState[];
+    lastVelocity: number;
+    lastWidth: number;
+  }>());
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -89,13 +91,15 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     };
   };
 
-  const startStroke = (clientX: number, clientY: number) => {
+  const startStroke = (id: number, clientX: number, clientY: number) => {
     setIsDrawing(true);
     drawingRef.current = true;
     const state = getPointFromClient(clientX, clientY);
-    points.current = [state, state];
-    lastWidth.current = brushSize;
-    lastVelocity.current = 0;
+    strokes.current.set(id, {
+      points: [state, state],
+      lastVelocity: 0,
+      lastWidth: brushSize,
+    });
     
     // Set up canvas properties for "Wet Paint" texture
     const ctx = canvasRef.current?.getContext('2d');
@@ -105,14 +109,16 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     }
   };
 
-  const drawStroke = (clientX: number, clientY: number) => {
+  const drawStroke = (id: number, clientX: number, clientY: number) => {
     if (!drawingRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!ctx) return;
+    const stroke = strokes.current.get(id);
+    if (!stroke) return;
 
     const currentPoint = getPointFromClient(clientX, clientY);
-    const prevPoint = points.current[points.current.length - 1];
+    const prevPoint = stroke.points[stroke.points.length - 1];
     
     // Calculate Speed Dynamics
     const dist = Math.sqrt(Math.pow(currentPoint.x - prevPoint.x, 2) + Math.pow(currentPoint.y - prevPoint.y, 2));
@@ -120,8 +126,8 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     const velocity = time > 0 ? dist / time : 0;
     
     // Smooth out velocity
-    const smoothedVelocity = velocity * 0.3 + lastVelocity.current * 0.7;
-    lastVelocity.current = smoothedVelocity;
+    const smoothedVelocity = velocity * 0.3 + stroke.lastVelocity * 0.7;
+    stroke.lastVelocity = smoothedVelocity;
 
     // Determine width based on speed: slower = thicker, faster = thinner
     // We map velocity (0 to ~5) to a scale factor (1.2 to 0.4)
@@ -129,16 +135,16 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     const targetWidth = baseWidth * Math.max(0.3, Math.min(1.5, 1.5 - (smoothedVelocity / 3)));
     
     // Smooth width transitions
-    const newWidth = targetWidth * 0.2 + lastWidth.current * 0.8;
-    lastWidth.current = newWidth;
+    const newWidth = targetWidth * 0.2 + stroke.lastWidth * 0.8;
+    stroke.lastWidth = newWidth;
     currentPoint.width = newWidth;
 
-    points.current.push(currentPoint);
+    stroke.points.push(currentPoint);
 
-    if (points.current.length > 3) {
-      const p0 = points.current[points.current.length - 3];
-      const p1 = points.current[points.current.length - 2];
-      const p2 = points.current[points.current.length - 1];
+    if (stroke.points.length > 3) {
+      const p0 = stroke.points[stroke.points.length - 3];
+      const p1 = stroke.points[stroke.points.length - 2];
+      const p2 = stroke.points[stroke.points.length - 1];
 
       // Midpoints for quadratic curve smoothing
       const mid1 = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
@@ -166,32 +172,36 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
       ctx.shadowBlur = 0;
       
       // Keep buffer small
-      points.current.shift();
+      stroke.points.shift();
     }
   };
 
-  const stopStroke = () => {
-    setIsDrawing(false);
-    drawingRef.current = false;
-    points.current = [];
+  const stopStroke = (id: number) => {
+    strokes.current.delete(id);
+    if (strokes.current.size === 0) {
+      setIsDrawing(false);
+      drawingRef.current = false;
+    }
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-    startStroke(e.clientX, e.clientY);
+    startStroke(e.pointerId, e.clientX, e.clientY);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    drawStroke(e.clientX, e.clientY);
+    drawStroke(e.pointerId, e.clientX, e.clientY);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if ('PointerEvent' in window) return;
     if (e.button !== 0) return;
-    startStroke(e.clientX, e.clientY);
+    startStroke(-1, e.clientX, e.clientY);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    drawStroke(e.clientX, e.clientY);
+    if ('PointerEvent' in window) return;
+    drawStroke(-1, e.clientX, e.clientY);
   };
 
   useEffect(() => {
@@ -199,20 +209,22 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
     if (!canvas) return;
 
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 0) return;
       e.preventDefault();
-      const touch = e.touches[0];
-      startStroke(touch.clientX, touch.clientY);
+      for (const touch of Array.from(e.changedTouches)) {
+        startStroke(touch.identifier, touch.clientX, touch.clientY);
+      }
     };
     const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 0) return;
       e.preventDefault();
-      const touch = e.touches[0];
-      drawStroke(touch.clientX, touch.clientY);
+      for (const touch of Array.from(e.changedTouches)) {
+        drawStroke(touch.identifier, touch.clientX, touch.clientY);
+      }
     };
     const onTouchEnd = (e: TouchEvent) => {
       e.preventDefault();
-      stopStroke();
+      for (const touch of Array.from(e.changedTouches)) {
+        stopStroke(touch.identifier);
+      }
     };
 
     canvas.addEventListener('touchstart', onTouchStart, { passive: false });
@@ -233,13 +245,13 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
       ref={canvasRef}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={stopStroke}
-      onPointerCancel={stopStroke}
-      onPointerLeave={stopStroke}
+      onPointerUp={(e) => stopStroke(e.pointerId)}
+      onPointerCancel={(e) => stopStroke(e.pointerId)}
+      onPointerLeave={(e) => stopStroke(e.pointerId)}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
-      onMouseUp={stopStroke}
-      onMouseLeave={stopStroke}
+      onMouseUp={() => stopStroke(-1)}
+      onMouseLeave={() => stopStroke(-1)}
       className="fixed inset-0 w-full h-full cursor-crosshair bg-white touch-none"
       style={{ touchAction: 'none' }}
     />
