@@ -129,12 +129,17 @@ const App: React.FC = () => {
     const canvas = document.querySelector('canvas');
     if (canvas) {
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const canShareFiles = (file: File) => {
+        if (!navigator.share) return false;
+        const canShare = (navigator as any).canShare;
+        if (typeof canShare !== 'function') return true;
+        return canShare({ files: [file] });
+      };
       canvas.toBlob(async (blob) => {
         if (!blob) return;
         const filename = `pawprint-${Date.now()}.png`;
-
-        if (navigator.share && (navigator as any).canShare && (navigator as any).canShare({ files: [new File([blob], filename, { type: blob.type })] })) {
-          const file = new File([blob], filename, { type: blob.type });
+        const file = new File([blob], filename, { type: blob.type });
+        if (canShareFiles(file)) {
           try {
             await navigator.share({ files: [file], title: 'PawPaint', text: 'My PawPaint masterpiece' });
             showToast("Share to Photos to save ✨", "success");
