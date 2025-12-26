@@ -8,8 +8,10 @@ import Viewer from './components/Viewer';
 const ROOM_STORAGE_KEY = 'pawpaint-room';
 const ROOM_CODE_TTL_MS = 1000 * 60 * 30;
 const SNAPSHOT_MIN_INTERVAL_MS = 250;
+const SNAPSHOT_MIN_INTERVAL_LOW_POWER_MS = 1000;
 const SNAPSHOT_MAX_CHARS = 2_500_000;
 const SNAPSHOT_MAX_DIMENSION = 1024;
+const SNAPSHOT_MAX_DIMENSION_LOW_POWER = 768;
 
 type StoredRoom = {
   code: string;
@@ -45,6 +47,28 @@ const App: React.FC = () => {
 
   const clearCanvasRef = useRef<(() => void) | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const updateViewportVars = () => {
+      const width = window.visualViewport?.width ?? window.innerWidth;
+      const height = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty('--app-width', `${Math.round(width)}px`);
+      document.documentElement.style.setProperty('--app-height', `${Math.round(height)}px`);
+    };
+
+    updateViewportVars();
+    window.addEventListener('resize', updateViewportVars);
+    window.addEventListener('orientationchange', updateViewportVars);
+    window.visualViewport?.addEventListener('resize', updateViewportVars);
+
+    return () => {
+      window.removeEventListener('resize', updateViewportVars);
+      window.removeEventListener('orientationchange', updateViewportVars);
+      window.visualViewport?.removeEventListener('resize', updateViewportVars);
+    };
+  }, []);
 
   useEffect(() => {
     const id = setTimeout(async () => {
@@ -117,6 +141,27 @@ const App: React.FC = () => {
     lastSentAt: 0,
   });
 
+  const snapshotSettingsRef = useRef({
+    minIntervalMs: SNAPSHOT_MIN_INTERVAL_MS,
+    maxDimension: SNAPSHOT_MAX_DIMENSION,
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const ua = window.navigator?.userAgent ?? '';
+    const isOldIOS = /iP(ad|hone|od).*OS 12[_\\d]*/i.test(ua);
+    const isStandalone = (window.navigator as any)?.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
+    const lowPower = isOldIOS || isStandalone;
+
+    snapshotSettingsRef.current = {
+      minIntervalMs: lowPower ? SNAPSHOT_MIN_INTERVAL_LOW_POWER_MS : SNAPSHOT_MIN_INTERVAL_MS,
+      maxDimension: lowPower ? SNAPSHOT_MAX_DIMENSION_LOW_POWER : SNAPSHOT_MAX_DIMENSION,
+    };
+
+    return undefined;
+  }, []);
+
   const touchRoomStorage = useCallback((code: string) => {
     const now = Date.now();
     try {
@@ -153,7 +198,8 @@ const App: React.FC = () => {
       return next;
     };
 
-    const baseScale = Math.min(1, SNAPSHOT_MAX_DIMENSION / Math.max(canvas.width, canvas.height));
+    const maxDimension = snapshotSettingsRef.current.maxDimension;
+    const baseScale = Math.min(1, maxDimension / Math.max(canvas.width, canvas.height));
     const scales = Array.from(new Set([baseScale, baseScale * 0.85, baseScale * 0.7, baseScale * 0.55, baseScale * 0.4]))
       .filter((scale) => scale > 0.15)
       .map((scale) => Math.min(1, scale));
@@ -182,6 +228,27 @@ const App: React.FC = () => {
     return null;
   }, []);
 
+  const pingRoom = useCallback(async () => {
+    if (!roomCode) return;
+    try {
+      const res = await fetch(`/api/view/${roomCode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ping: true }),
+      });
+      if (!res.ok) throw new Error(`Room ping failed (${res.status})`);
+      touchRoomStorage(roomCode);
+    } catch (err) {
+      console.error('Room ping failed', err);
+      try {
+        const res = await fetch(`/api/view/${roomCode}?ping=1`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`Room ping fallback failed (${res.status})`);
+      } catch (fallbackErr) {
+        console.error('Room ping fallback failed', fallbackErr);
+      }
+    }
+  }, [roomCode, touchRoomStorage]);
+
   const pushSnapshot = useCallback(async () => {
     if (!roomCode) return;
     const canvas = canvasRef.current;
@@ -199,8 +266,9 @@ const App: React.FC = () => {
       touchRoomStorage(roomCode);
     } catch (err) {
       console.error('Snapshot sync failed', err);
+      await pingRoom();
     }
-  }, [roomCode, createSnapshotDataUrl, touchRoomStorage]);
+  }, [roomCode, createSnapshotDataUrl, touchRoomStorage, pingRoom]);
 
   const scheduleSnapshotPush = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -209,7 +277,7 @@ const App: React.FC = () => {
     if (scheduler.timerId) return;
 
     const now = Date.now();
-    const earliest = scheduler.lastSentAt + SNAPSHOT_MIN_INTERVAL_MS;
+    const earliest = scheduler.lastSentAt + snapshotSettingsRef.current.minIntervalMs;
     const delay = Math.max(0, earliest - now);
 
     scheduler.timerId = window.setTimeout(async () => {
@@ -253,27 +321,6 @@ const App: React.FC = () => {
       scheduler.timerId = null;
     };
   }, []);
-
-  const pingRoom = useCallback(async () => {
-    if (!roomCode) return;
-    try {
-      const res = await fetch(`/api/view/${roomCode}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ping: true }),
-      });
-      if (!res.ok) throw new Error(`Room ping failed (${res.status})`);
-      touchRoomStorage(roomCode);
-    } catch (err) {
-      console.error('Room ping failed', err);
-      try {
-        const res = await fetch(`/api/view/${roomCode}?ping=1`, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`Room ping fallback failed (${res.status})`);
-      } catch (fallbackErr) {
-        console.error('Room ping fallback failed', fallbackErr);
-      }
-    }
-  }, [roomCode, touchRoomStorage]);
 
   useEffect(() => {
     if (!roomCode) return undefined;
@@ -603,7 +650,11 @@ const App: React.FC = () => {
   };
 
   return (
-    <div ref={containerRef} className="relative w-screen h-screen overflow-hidden bg-[#fffcf2] select-none touch-none">
+    <div
+      ref={containerRef}
+      className="relative overflow-hidden bg-[#fffcf2] select-none touch-none"
+      style={{ width: 'var(--app-width, 100vw)', height: 'var(--app-height, 100vh)' }}
+    >
       
       {/* Brand Watermark */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-[0.03] rotate-12">

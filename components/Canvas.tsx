@@ -34,7 +34,10 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+
     const oldWidth = canvas.width;
     const oldHeight = canvas.height;
     
@@ -46,8 +49,8 @@ const Canvas: React.FC<CanvasProps> = ({ color, brushSize, onClearRef, isFullscr
       tempCtx.drawImage(canvas, 0, 0);
     }
 
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    canvas.width = Math.max(1, Math.floor(viewportWidth));
+    canvas.height = Math.max(1, Math.floor(viewportHeight));
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
