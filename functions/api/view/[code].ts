@@ -11,6 +11,8 @@ export const onRequest = async (context: any) => {
   const code = normalizeRoomCode(context.params.code as string | undefined);
   if (!code) return new Response('Room code required', { status: 400 });
 
+  const url = new URL(context.request.url);
+
   if (context.request.method === 'POST') {
     try {
       const body = await context.request.json();
@@ -39,6 +41,21 @@ export const onRequest = async (context: any) => {
     }
   }
 
-  const snapshot = await loadSnapshot(context, code);
-  return new Response(JSON.stringify(snapshot), { headers: jsonHeaders });
+  if (context.request.method === 'GET') {
+    if (url.searchParams.get('ping') === '1') {
+      try {
+        const now = Date.now();
+        await touchSnapshot(context, code, now);
+        return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-cache, no-store' } });
+      } catch (err) {
+        console.error('Failed to ping snapshot', err);
+        return new Response('Failed to ping', { status: 500 });
+      }
+    }
+
+    const snapshot = await loadSnapshot(context, code);
+    return new Response(JSON.stringify(snapshot), { headers: jsonHeaders });
+  }
+
+  return new Response('Method not allowed', { status: 405 });
 };

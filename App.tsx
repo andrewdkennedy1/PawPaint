@@ -98,7 +98,11 @@ const App: React.FC = () => {
     setRoomCode(code);
 
     const createdAt = reuseStored && typeof stored?.createdAt === 'number' ? stored.createdAt : now;
-    localStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify({ code, createdAt, lastSeenAt: now } satisfies StoredRoom));
+    try {
+      localStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify({ code, createdAt, lastSeenAt: now } satisfies StoredRoom));
+    } catch (err) {
+      console.warn('Failed to persist room code', err);
+    }
   }, []);
 
   const snapshotSchedulerRef = useRef<{
@@ -262,6 +266,12 @@ const App: React.FC = () => {
       touchRoomStorage(roomCode);
     } catch (err) {
       console.error('Room ping failed', err);
+      try {
+        const res = await fetch(`/api/view/${roomCode}?ping=1`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`Room ping fallback failed (${res.status})`);
+      } catch (fallbackErr) {
+        console.error('Room ping fallback failed', fallbackErr);
+      }
     }
   }, [roomCode, touchRoomStorage]);
 

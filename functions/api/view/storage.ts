@@ -144,17 +144,17 @@ export const listActiveRooms = async (context: any): Promise<ActiveRoom[]> => {
     try {
       const indexed = await loadRoomIndexFromKV(kv);
       if (indexed.length > 0) {
-        const activeCodes = indexed
+        const activeEntries = indexed
           .filter((room) => (room.updatedAt ? now - room.updatedAt < ACTIVE_ROOM_WINDOW_MS : false))
           .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-          .map((room) => room.code);
+          .map((room) => ({ code: room.code, updatedAt: room.updatedAt }));
 
         const rooms = await Promise.all(
-          activeCodes.map(async (code) => {
-            const data = await kv.get(roomKey(code), { type: 'json' });
-            const updatedAt = typeof data?.updatedAt === 'number' ? data.updatedAt : null;
+          activeEntries.map(async (entry) => {
+            const data = await kv.get(roomKey(entry.code), { type: 'json' });
+            const updatedAt = typeof data?.updatedAt === 'number' ? data.updatedAt : entry.updatedAt ?? null;
             const image = typeof data?.image === 'string' ? data.image : null;
-            return { code, updatedAt, image } as ActiveRoom;
+            return { code: entry.code, updatedAt, image } as ActiveRoom;
           }),
         );
 
