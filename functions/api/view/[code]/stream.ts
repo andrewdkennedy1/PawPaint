@@ -10,6 +10,10 @@ const eventStreamHeaders = {
   'Cache-Control': 'no-cache, no-store',
 };
 
+const FAST_POLL_INTERVAL_MS = 250;
+const SLOW_POLL_INTERVAL_MS = 1000;
+const RECENT_ACTIVITY_WINDOW_MS = 5000;
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const formatSseEvent = (event: string, data: SnapshotResponse) => {
@@ -21,6 +25,9 @@ export const onRequest = async (context: any) => {
   const code = normalizeRoomCode(context.params.code as string | undefined);
   if (!code) return new Response('Room code required', { status: 400 });
   if (context.request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
+
+  const url = new URL(context.request.url);
+  const forceFast = url.searchParams.get('fast') === '1' || url.searchParams.get('mode') === 'live';
 
   if (typeof ReadableStream === 'undefined') {
     const snapshot = await loadSnapshot(context, code);
@@ -54,19 +61,23 @@ export const onRequest = async (context: any) => {
         send(formatSseEvent('snapshot', initial));
 
         while (!closed && Date.now() - startedAt < 1000 * 60 * 10) {
-          await sleep(1000);
+          const now = Date.now();
+          const activeRecently = typeof lastUpdatedAt === 'number' && now - lastUpdatedAt < RECENT_ACTIVITY_WINDOW_MS;
+          const pollInterval = forceFast || activeRecently ? FAST_POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS;
+
+          await sleep(pollInterval);
           if (closed) break;
 
           const snapshot = await loadSnapshot(context, code);
-          if (snapshot.updatedAt && snapshot.updatedAt !== lastUpdatedAt) {
+          if (snapshot.updatedAt !== lastUpdatedAt) {
             lastUpdatedAt = snapshot.updatedAt;
             send(formatSseEvent('snapshot', snapshot));
           }
 
-          const now = Date.now();
-          if (now - lastPingAt > 15000) {
-            lastPingAt = now;
-            send(`: ping ${now}\n\n`);
+          const pingNow = Date.now();
+          if (pingNow - lastPingAt > 15000) {
+            lastPingAt = pingNow;
+            send(`: ping ${pingNow}\n\n`);
           }
         }
 

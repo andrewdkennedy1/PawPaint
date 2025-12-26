@@ -12,6 +12,9 @@ interface ActiveRoom {
   updatedAt: number | null;
 }
 
+const LIVE_POLL_INTERVAL_MS = 500;
+const LIVE_STREAM_FALLBACK_MS = 2000;
+
 const Viewer: React.FC = () => {
   const presetRoomFromUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
@@ -63,6 +66,7 @@ const Viewer: React.FC = () => {
     let eventSource: EventSource | null = null;
     let fallbackTimer: number | null = null;
     let receivedFirstEvent = false;
+    let pollInFlight = false;
 
     const applySnapshot = (json: SnapshotResponse) => {
       setSnapshot(json);
@@ -78,6 +82,8 @@ const Viewer: React.FC = () => {
     const startPolling = () => {
       if (pollId) return;
       const poll = async () => {
+        if (pollInFlight) return;
+        pollInFlight = true;
         try {
           const res = await fetch(`/api/view/${activeRoom}`);
           if (!res.ok) throw new Error('Failed to load snapshot');
@@ -88,15 +94,17 @@ const Viewer: React.FC = () => {
             console.error(err);
             setStatus('Connection lost. Retrying...');
           }
+        } finally {
+          pollInFlight = false;
         }
       };
 
       poll();
-      pollId = window.setInterval(poll, 2000);
+      pollId = window.setInterval(poll, LIVE_POLL_INTERVAL_MS);
     };
 
     if (typeof window !== 'undefined' && 'EventSource' in window) {
-      eventSource = new EventSource(`/api/view/${activeRoom}/stream`);
+      eventSource = new EventSource(`/api/view/${activeRoom}/stream?fast=1`);
       eventSource.addEventListener('snapshot', (event) => {
         if (cancelled) return;
         try {
@@ -114,11 +122,9 @@ const Viewer: React.FC = () => {
       eventSource.onerror = () => {
         if (cancelled) return;
         setStatus('Connection lost. Retrying...');
-        if (!receivedFirstEvent) {
-          eventSource?.close();
-          eventSource = null;
-          startPolling();
-        }
+        eventSource?.close();
+        eventSource = null;
+        startPolling();
       };
 
       fallbackTimer = window.setTimeout(() => {
@@ -127,7 +133,7 @@ const Viewer: React.FC = () => {
         eventSource?.close();
         eventSource = null;
         startPolling();
-      }, 5000);
+      }, LIVE_STREAM_FALLBACK_MS);
     } else {
       startPolling();
     }

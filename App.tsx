@@ -5,6 +5,20 @@ import Canvas from './components/Canvas';
 import { COLORS, COLOR_THEMES, BRUSH_SIZES } from './constants';
 import Viewer from './components/Viewer';
 
+const ROOM_STORAGE_KEY = 'pawpaint-room';
+const ROOM_CODE_TTL_MS = 1000 * 60 * 30;
+const SNAPSHOT_MIN_INTERVAL_MS = 250;
+const SNAPSHOT_MAX_CHARS = 2_500_000;
+const SNAPSHOT_MAX_DIMENSION = 1024;
+
+type StoredRoom = {
+  code: string;
+  createdAt: number;
+  lastSeenAt: number;
+};
+
+const generateRoomCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+
 const App: React.FC = () => {
   const [color, setColor] = useState(COLORS[0]);
   const [brushSize, setBrushSize] = useState(BRUSH_SIZES[1]);
@@ -26,7 +40,6 @@ const App: React.FC = () => {
   const [gateCode, setGateCode] = useState<string>("");
   const [userAttempt, setUserAttempt] = useState<string>("");
   const [roomCode, setRoomCode] = useState<string>("");
-  const [snapshotDirty, setSnapshotDirty] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -68,52 +81,213 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem('pawpaint-room-code');
-    const code = (stored || Math.random().toString(36).slice(2, 8)).toUpperCase();
+    const now = Date.now();
+    let stored: StoredRoom | null = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(ROOM_STORAGE_KEY) ?? 'null') as StoredRoom | null;
+      localStorage.removeItem('pawpaint-room-code');
+    } catch {
+      stored = null;
+    }
+
+    const storedCode = typeof stored?.code === 'string' ? stored.code.trim().toUpperCase() : '';
+    const storedLastSeenAt = typeof stored?.lastSeenAt === 'number' ? stored.lastSeenAt : 0;
+    const reuseStored = !!storedCode && now - storedLastSeenAt < ROOM_CODE_TTL_MS;
+    const code = reuseStored ? storedCode : generateRoomCode();
+
     setRoomCode(code);
-    localStorage.setItem('pawpaint-room-code', code);
+
+    const createdAt = reuseStored && typeof stored?.createdAt === 'number' ? stored.createdAt : now;
+    localStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify({ code, createdAt, lastSeenAt: now } satisfies StoredRoom));
   }, []);
 
-  const markActivity = useCallback(() => setSnapshotDirty(true), []);
+  const snapshotSchedulerRef = useRef<{
+    timerId: number | null;
+    pending: boolean;
+    inFlight: boolean;
+    lastSentAt: number;
+  }>({
+    timerId: null,
+    pending: false,
+    inFlight: false,
+    lastSentAt: 0,
+  });
+
+  const touchRoomStorage = useCallback((code: string) => {
+    const now = Date.now();
+    try {
+      const stored = JSON.parse(localStorage.getItem(ROOM_STORAGE_KEY) ?? 'null') as StoredRoom | null;
+      const storedCode = typeof stored?.code === 'string' ? stored.code.toUpperCase() : '';
+      const createdAt = storedCode === code && typeof stored?.createdAt === 'number' ? stored.createdAt : now;
+      localStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify({ code, createdAt, lastSeenAt: now } satisfies StoredRoom));
+    } catch {
+      localStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify({ code, createdAt: now, lastSeenAt: now } satisfies StoredRoom));
+    }
+  }, []);
+
+  const createSnapshotDataUrl = useCallback((canvas: HTMLCanvasElement) => {
+    const tryEncode = (source: HTMLCanvasElement, type: string, quality?: number) => {
+      try {
+        const dataUrl = typeof quality === 'number' ? source.toDataURL(type, quality) : source.toDataURL(type);
+        if (!dataUrl.startsWith('data:image/')) return null;
+        if (type === 'image/webp' && !dataUrl.startsWith('data:image/webp')) return null;
+        if (type === 'image/jpeg' && !dataUrl.startsWith('data:image/jpeg')) return null;
+        if (dataUrl.length > SNAPSHOT_MAX_CHARS) return null;
+        return dataUrl;
+      } catch {
+        return null;
+      }
+    };
+
+    const renderScaledCanvas = (scale: number) => {
+      const next = document.createElement('canvas');
+      next.width = Math.max(1, Math.floor(canvas.width * scale));
+      next.height = Math.max(1, Math.floor(canvas.height * scale));
+      const ctx = next.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(canvas, 0, 0, next.width, next.height);
+      return next;
+    };
+
+    const baseScale = Math.min(1, SNAPSHOT_MAX_DIMENSION / Math.max(canvas.width, canvas.height));
+    const scales = Array.from(new Set([baseScale, baseScale * 0.85, baseScale * 0.7, baseScale * 0.55, baseScale * 0.4]))
+      .filter((scale) => scale > 0.15)
+      .map((scale) => Math.min(1, scale));
+
+    const jpegQualities = [0.82, 0.72, 0.62, 0.52, 0.42];
+    const webpQualities = [0.7, 0.6, 0.5];
+
+    for (const scale of scales) {
+      const source = scale === 1 ? canvas : renderScaledCanvas(scale);
+      if (!source) continue;
+
+      for (const quality of webpQualities) {
+        const dataUrl = tryEncode(source, 'image/webp', quality);
+        if (dataUrl) return dataUrl;
+      }
+
+      for (const quality of jpegQualities) {
+        const dataUrl = tryEncode(source, 'image/jpeg', quality);
+        if (dataUrl) return dataUrl;
+      }
+
+      const pngUrl = tryEncode(source, 'image/png');
+      if (pngUrl) return pngUrl;
+    }
+
+    return null;
+  }, []);
 
   const pushSnapshot = useCallback(async () => {
     if (!roomCode) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     try {
-      const dataUrl = canvas.toDataURL('image/webp', 0.7);
-      await fetch(`/api/view/${roomCode}`, {
+      const dataUrl = createSnapshotDataUrl(canvas);
+      if (!dataUrl) throw new Error('Unable to encode snapshot');
+
+      const res = await fetch(`/api/view/${roomCode}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: dataUrl }),
       });
+      if (!res.ok) throw new Error(`Snapshot sync failed (${res.status})`);
+      touchRoomStorage(roomCode);
     } catch (err) {
       console.error('Snapshot sync failed', err);
     }
+  }, [roomCode, createSnapshotDataUrl, touchRoomStorage]);
+
+  const scheduleSnapshotPush = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const scheduler = snapshotSchedulerRef.current;
+    scheduler.pending = true;
+    if (scheduler.timerId) return;
+
+    const now = Date.now();
+    const earliest = scheduler.lastSentAt + SNAPSHOT_MIN_INTERVAL_MS;
+    const delay = Math.max(0, earliest - now);
+
+    scheduler.timerId = window.setTimeout(async () => {
+      scheduler.timerId = null;
+      if (scheduler.inFlight) {
+        scheduler.pending = true;
+        return;
+      }
+      if (!scheduler.pending) return;
+
+      scheduler.inFlight = true;
+      scheduler.pending = false;
+      try {
+        await pushSnapshot();
+      } finally {
+        scheduler.lastSentAt = Date.now();
+        scheduler.inFlight = false;
+        if (scheduler.pending) scheduleSnapshotPush();
+      }
+    }, delay);
+  }, [pushSnapshot]);
+
+  const markActivity = useCallback(() => scheduleSnapshotPush(), [scheduleSnapshotPush]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const scheduler = snapshotSchedulerRef.current;
+    if (scheduler.timerId) window.clearTimeout(scheduler.timerId);
+    scheduler.timerId = null;
+    scheduler.pending = false;
+    scheduler.inFlight = false;
+    scheduler.lastSentAt = 0;
+    return undefined;
   }, [roomCode]);
 
   useEffect(() => {
-    if (!snapshotDirty) return undefined;
-    const id = setTimeout(() => {
-      pushSnapshot();
-      setSnapshotDirty(false);
-    }, 800);
-    return () => clearTimeout(id);
-  }, [snapshotDirty, pushSnapshot]);
+    if (typeof window === 'undefined') return undefined;
+    const scheduler = snapshotSchedulerRef.current;
+    return () => {
+      if (scheduler.timerId) window.clearTimeout(scheduler.timerId);
+      scheduler.timerId = null;
+    };
+  }, []);
+
+  const pingRoom = useCallback(async () => {
+    if (!roomCode) return;
+    try {
+      const res = await fetch(`/api/view/${roomCode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ping: true }),
+      });
+      if (!res.ok) throw new Error(`Room ping failed (${res.status})`);
+      touchRoomStorage(roomCode);
+    } catch (err) {
+      console.error('Room ping failed', err);
+    }
+  }, [roomCode, touchRoomStorage]);
 
   useEffect(() => {
     if (!roomCode) return undefined;
     const id = setInterval(() => {
-      pushSnapshot();
-    }, 15000);
+      pingRoom();
+    }, 60000);
     return () => clearInterval(id);
-  }, [roomCode, pushSnapshot]);
+  }, [roomCode, pingRoom]);
 
   useEffect(() => {
-    if (roomCode) {
-      setSnapshotDirty(true);
+    if (!roomCode) return;
+    pingRoom();
+  }, [roomCode, pingRoom]);
+
+  const regenerateRoomCode = useCallback(() => {
+    const now = Date.now();
+    const next = generateRoomCode();
+    setRoomCode(next);
+    try {
+      localStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify({ code: next, createdAt: now, lastSeenAt: now } satisfies StoredRoom));
+    } catch (err) {
+      console.warn('Failed to persist room code', err);
     }
-  }, [roomCode]);
+  }, []);
 
   const generateGateCode = () => {
     const code = Array.from({ length: 3 }, () => Math.floor(Math.random() * 9) + 1).join("");
@@ -521,15 +695,30 @@ const App: React.FC = () => {
           )}
 
           {/* Floating Hard-to-get Menu */}
-          {isMenuOpen && (
-            <div className="absolute bottom-20 left-0 w-[85vw] max-w-sm bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-pink-100 p-6 flex flex-col gap-6 animate-slide-up">
-              <h2 className="text-pink-500 font-black flex items-center gap-2 text-xl tracking-tight">
-                <Palette size={24} /> PawPaint Controls
-              </h2>
+	          {isMenuOpen && (
+	            <div className="absolute bottom-20 left-0 w-[85vw] max-w-sm bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-pink-100 p-6 flex flex-col gap-6 animate-slide-up">
+	              <h2 className="text-pink-500 font-black flex items-center gap-2 text-xl tracking-tight">
+	                <Palette size={24} /> PawPaint Controls
+	              </h2>
 
-              {/* Theme Controls */}
-              <div className="flex items-center justify-between bg-pink-50 rounded-3xl px-4 py-3 gap-3">
-                <div className="text-[10px] font-black uppercase tracking-wider text-pink-500">
+	              <div className="flex items-center justify-between bg-indigo-50 rounded-3xl px-4 py-3 gap-4 border border-indigo-100">
+	                <div className="min-w-0">
+	                  <p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Viewer room</p>
+	                  <p className="text-indigo-700 text-lg font-black tracking-[0.25em] truncate">{roomCode || '...'}</p>
+	                  <p className="text-indigo-300 text-[10px] font-bold uppercase">pawpaint.catcafe.space/view</p>
+	                </div>
+	                <button
+	                  type="button"
+	                  onClick={regenerateRoomCode}
+	                  className="px-4 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-sm hover:bg-indigo-700"
+	                >
+	                  New code
+	                </button>
+	              </div>
+
+	              {/* Theme Controls */}
+	              <div className="flex items-center justify-between bg-pink-50 rounded-3xl px-4 py-3 gap-3">
+	                <div className="text-[10px] font-black uppercase tracking-wider text-pink-500">
                   Theme
                 </div>
                 <select
